@@ -1,8 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { useAuthStore } from "../store/useAuthStore";
 import { useAppStore } from "../store/useAppStore";
+import { listConversations } from "../services/firebase/all_collections/conversations/conversationsService";
+import { STATUS_VALUES } from "../services/firebase/all_collections/conversations/conversationsConfig";
 
 function Avatar({ name, isActive }) {
-  const initial = name.charAt(0).toUpperCase();
+  const initial = (name || "?").charAt(0).toUpperCase();
   return (
     <div
       className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium shrink-0 ${
@@ -22,10 +25,66 @@ function normalize(str) {
     .replace(/\p{Diacritic}/gu, "");
 }
 
+/** Convierte Timestamp de Firestore o Date a texto relativo (ej. "Hace 2 min"). */
+function formatRelative(ts) {
+  if (!ts) return "";
+  const date = typeof ts?.toDate === "function" ? ts.toDate() : new Date(ts);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffH = Math.floor(diffMs / 3600000);
+  const diffD = Math.floor(diffMs / 86400000);
+  if (diffMin < 1) return "Ahora";
+  if (diffMin < 60) return `Hace ${diffMin} min`;
+  if (diffH < 24) return `Hace ${diffH} h`;
+  if (diffD === 1) return "Ayer";
+  if (diffD < 7) return `Hace ${diffD} días`;
+  return date.toLocaleDateString();
+}
+
+function statusToLabel(status) {
+  if (status === STATUS_VALUES.closed) return "Resuelto";
+  if (status === STATUS_VALUES.archived) return "Archivado";
+  return "En curso";
+}
+
 export default function ConversationsPage() {
-  const { conversations, activeConversationId, setActiveConversation } =
-    useAppStore();
+  const { business } = useAuthStore();
+  const { activeConversationId, setActiveConversation } = useAppStore();
+  const [conversations, setConversations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [busqueda, setBusqueda] = useState("");
+
+  const cargarConversaciones = useCallback(async () => {
+    if (!business?.id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const lista = await listConversations(business.id, { max: 50 });
+      const mapeadas = lista.map((c) => ({
+        id: c.id,
+        name: c.customer?.name || c.customer?.phone || "Sin nombre",
+        last: c.lastMessage?.text || "—",
+        percentage: c.lead?.score ?? 0,
+        status: statusToLabel(c.status),
+        lastActivity: formatRelative(c.lastMessage?.at ?? c.updatedAt),
+        messageCount: c.unreadCount ?? 0,
+        channel: c.channel || "",
+        topic: c.lead?.stage ?? "",
+      }));
+      setConversations(mapeadas);
+    } catch (err) {
+      setError(err?.message ?? "Error al cargar conversaciones");
+      setConversations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [business?.id]);
+
+  useEffect(() => {
+    cargarConversaciones();
+  }, [cargarConversaciones]);
 
   const conversacionesFiltradas = useMemo(() => {
     const q = normalize(busqueda).trim();
@@ -40,9 +99,23 @@ export default function ConversationsPage() {
     );
   }, [conversations, busqueda]);
 
+  if (!business) {
+    return (
+      <div className="p-4 text-center text-neutral-500">
+        Cargando negocio…
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 space-y-3">
       <h2 className="text-lg font-semibold">Listado de Conversaciones</h2>
+
+      {error && (
+        <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">
+          {error}
+        </div>
+      )}
 
       <div className="relative">
         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none">
@@ -71,9 +144,15 @@ export default function ConversationsPage() {
         />
       </div>
 
-      {conversacionesFiltradas.length === 0 ? (
+      {loading ? (
         <p className="text-sm text-neutral-500 py-4 text-center">
-          No hay conversaciones que coincidan con la búsqueda.
+          Cargando conversaciones…
+        </p>
+      ) : conversacionesFiltradas.length === 0 ? (
+        <p className="text-sm text-neutral-500 py-4 text-center">
+          {busqueda
+            ? "No hay conversaciones que coincidan con la búsqueda."
+            : "No hay conversaciones aún. Cuando lleguen chats (p. ej. por WhatsApp vía n8n), aparecerán aquí."}
         </p>
       ) : (
         <div className="space-y-3">

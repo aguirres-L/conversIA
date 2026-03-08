@@ -34,6 +34,16 @@ export default function DesktopSidebar() {
         >
           Productos
         </button>
+
+
+          <button
+            type="button"
+            onClick={() => navigate("/graph")}
+            className={`${linkBase} ${linkInactive} w-full text-left`}
+          >
+            Gráficos
+          </button>
+
       </nav>
     </aside>
   );

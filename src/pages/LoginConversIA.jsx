@@ -1,14 +1,19 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
-// Rutas (evitar magic strings)
+import logoConversIA from "../../public/ca.png";
+import HeroComponent from "../components/hero/HeroComponent";
+import { auth } from "../services/firebase/firebaseConfig";
+import { getBusinessByOwnerUid } from "../services/firebase/all_collections";
+import { useAuthStore } from "../store/useAuthStore";
+
 const ROUTES = {
   conversations: "/conversations",
   forgot: "/forgot",
   register: "/register",
 };
 
-// Clases reutilizables para mantener consistencia y DRY
 const INPUT_CLASS =
   "w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm " +
   "placeholder:text-white/40 outline-none focus:border-white/30 focus:ring-2 focus:ring-white/10";
@@ -17,12 +22,32 @@ const LINK_SECONDARY_CLASS = "text-xs text-white/70 hover:text-white underline u
 
 function useLoginForm() {
   const navigate = useNavigate();
+  const setAuth = useAuthStore((s) => s.setAuth);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState(null);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: conectar auth real
-    navigate(ROUTES.conversations);
+    setLoginError(null);
+    const form = e.target;
+    const email = form.querySelector("#login-email")?.value?.trim();
+    const password = form.querySelector("#login-password")?.value;
+    if (!email || !password) return;
+
+    setIsLoading(true);
+    try {
+      const { user } = await signInWithEmailAndPassword(auth, email, password);
+      const business = await getBusinessByOwnerUid(user.uid);
+      setAuth(user, business);
+      navigate(ROUTES.conversations);
+    } catch (err) {
+      setLoginError(err.code === "auth/invalid-credential" || err.code === "auth/user-not-found"
+        ? "Email o contraseña incorrectos."
+        : err.message || "Error al iniciar sesión.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const togglePasswordVisibility = () => {
@@ -39,6 +64,8 @@ function useLoginForm() {
     togglePasswordVisibility,
     handleSubmit,
     handleGoogleLogin,
+    isLoading,
+    loginError,
   };
 }
 
@@ -48,31 +75,42 @@ function LoginConversIA() {
     togglePasswordVisibility,
     handleSubmit,
     handleGoogleLogin,
+    isLoading,
+    loginError,
   } = useLoginForm();
 
   const currentYear = new Date().getFullYear();
 
   return (
-    <div className="min-h-dvh bg-black text-white flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="rounded-2xl border border-white/10 bg-white/5 shadow-xl overflow-hidden">
-          {/* Header */}
-          <header className="p-6 border-b border-white/10">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs tracking-widest text-white/60">CONVERSIA</p>
-                <h1 className="text-xl font-semibold mt-1">Iniciar sesión</h1>
-              </div>
-              <div className="h-10 w-10 rounded-xl border border-white/10 bg-white/10 grid place-items-center">
-                <span className="text-sm font-semibold">CI</span>
-              </div>
-            </div>
-            <p className="text-sm text-white/70 mt-3">
-              Accedé al panel para gestionar conversaciones y entrenar el bot.
-            </p>
-          </header>
+    <div className="min-h-dvh bg-black text-white relative overflow-hidden">
+      {/* Hero de fondo: efecto visual a la izquierda */}
+      <div className="absolute inset-0 z-0">
+        <HeroComponent />
+      </div>
 
-          {/* Formulario */}
+      {/* Login en primer plano: card opaca por delante */}
+      <div className="relative z-10 flex min-h-dvh items-center justify-center p-4">
+        <div className="w-full max-w-sm shrink-0">
+          <div className="rounded-2xl border border-white/10 bg-white/5 shadow-xl overflow-hidden backdrop-blur-sm">
+            {/* Header */}
+            <header className="p-6 border-b border-white/10">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs tracking-widest text-white/60">CONVERSIA</p>
+                  <h1 className="text-xl font-semibold mt-1">Iniciar sesión</h1>
+                </div>
+                <img src={logoConversIA} alt="ConversIA Logo" className="h-24 w-24 rounded-xxl object-contain" />
+              </div>
+              <p className="text-sm text-white/70 mt-3">
+                Accedé al panel para gestionar conversaciones y entrenar el bot.
+              </p>
+            </header>
+            {loginError && (
+              <p className="mx-6 mt-4 text-sm text-red-400 bg-red-500/10 rounded-lg px-3 py-2">
+                {loginError}
+              </p>
+            )}
+            {/* Formulario */}
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
             <div className="space-y-2">
               <label className={LABEL_CLASS} htmlFor="login-email">
@@ -128,9 +166,10 @@ function LoginConversIA() {
 
             <button
               type="submit"
-              className="w-full rounded-xl bg-white text-black py-3 text-sm font-semibold hover:bg-white/90 active:bg-white/80 transition"
+              disabled={isLoading}
+              className="w-full rounded-xl bg-white text-black py-3 text-sm font-semibold hover:bg-white/90 active:bg-white/80 transition disabled:opacity-50"
             >
-              Entrar
+              {isLoading ? "Entrando..." : "Entrar"}
             </button>
 
             <div className="relative py-2" aria-hidden>
@@ -158,11 +197,12 @@ function LoginConversIA() {
               </Link>
             </p>
           </form>
-        </div>
+          </div>
 
-        <p className="text-center text-[11px] text-white/40 mt-4">
-          · © {currentYear} ConversIA ·
-        </p>
+          <p className="text-center text-[11px] text-white/40 mt-4">
+            · © {currentYear} ConversIA ·
+          </p>
+        </div>
       </div>
     </div>
   );

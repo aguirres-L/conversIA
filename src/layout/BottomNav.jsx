@@ -1,7 +1,8 @@
 import { NavLink } from "react-router-dom";
-import Botsvg from "../components/svg/Botsvg";
-import Listsvg from "../components/svg/Listsvg";
+import Botsvg from "../components/svg/Botsvg";/* 
+import Listsvg from "../components/svg/Listsvg"; */
 import Graphsvg from "../components/svg/Graphsvg";
+import MenssageSvg from "../components/svg/MenssageSvg";
 
 const circleBase =
   "w-60 h-12 rounded-full flex items-center justify-center transition-colors";
@@ -17,7 +18,8 @@ export default function BottomNav() {
           `${circleBase} ${isActive ? circleActive : circleInactive}`
         }
       >
-        <Listsvg />
+        {/* <Listsvg /> */}
+        <MenssageSvg/>
       </NavLink>
       <NavLink
         to="/training"
